@@ -1,0 +1,350 @@
+---
+# Página de previsão do tempo — condição atual grande (ícone + temperatura,
+# umidade e vento) e previsão dos próximos 5 dias em colunas.
+#
+# Condições atuais chegam por assinatura de atributos da entidade weather.
+# A PREVISÃO chega por push: o painel expõe o serviço "set_forecast" e uma
+# automação no HA chama weather.get_forecasts e envia os arrays para cá.
+#
+# vars:
+#   weather_entity   ex.: "weather.casa"
+#   page_id          página de volta (default main_page)
+
+globals:
+- id: wx_hum
+  type: float
+  initial_value: '-1.0'
+- id: wx_wind
+  type: float
+  initial_value: '-1.0'
+
+lvgl:
+  pages:
+  - id: weather_page
+    styles: page_style
+    skip: true
+    pad_all: 12
+    layout:
+      type: FLEX
+      flex_flow: COLUMN
+      flex_align_cross: CENTER
+    widgets:
+    # ── barra de topo ────────────────────────────────────────────────────────
+    - obj:
+        width: 100%
+        height: 56
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        scrollable: false
+        scrollbar_mode: "OFF"
+        widgets:
+        - button:
+            id: wx_btn_back
+            align: LEFT_MID
+            width: 50
+            height: 50
+            radius: 25
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - lvgl.page.show:
+                  id: ${page_id | default("main_page")}
+                  animation: OUT_RIGHT
+                  time: 150ms
+            widgets:
+            - label:
+                align: CENTER
+                text_font: mdi_icons_28
+                text_color: $tile_off_icon
+                text: $mdi_chevron_left
+        - label:
+            align: CENTER
+            text_font: $tile_name_font
+            text_color: $tile_off_status
+            text: "Previsão"
+    # ── corpo ────────────────────────────────────────────────────────────────
+    - obj:
+        width: 100%
+        flex_grow: 1
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        scrollable: false
+        scrollbar_mode: "OFF"
+        layout:
+          type: FLEX
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_row: 8
+        widgets:
+        # condição atual: ícone + temperatura
+        - obj:
+            width: 100%
+            height: 70
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: CENTER
+              flex_align_cross: CENTER
+              pad_column: 14
+            widgets:
+            - label:
+                id: wx_cur_ic
+                text_font: mdi_icons_40
+                text_color: $tile_on_bg
+                text: $mdi_weather_partly_cloudy
+            - label:
+                id: wx_cur_temp
+                text_font: nunito_48
+                text_color: $tile_off_name
+                text: "--°"
+        - label:
+            id: wx_cond_label
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_name_font
+            text_color: $tile_off_name
+            text: "..."
+        - label:
+            id: wx_info_label
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_status_font
+            text_color: $tile_off_status
+            text: ""
+        # respiro
+        - obj:
+            width: 100%
+            height: 10
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+        # previsão: 5 colunas
+        - obj:
+            width: 100%
+            height: 150
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: SPACE_EVENLY
+              flex_align_cross: CENTER
+              pad_column: 6
+            widgets:
+            - obj:
+                id: wx_col0
+                flex_grow: 1
+                height: 100%
+                bg_opa: TRANSP
+                border_width: 0
+                pad_all: 4
+                scrollable: false
+                scrollbar_mode: "OFF"
+                layout: {type: FLEX, flex_flow: COLUMN, flex_align_main: CENTER, flex_align_cross: CENTER, pad_row: 4}
+                widgets:
+                - label: {id: wx_d0_day, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--"}
+                - label: {id: wx_d0_ic, width: 100%, text_align: CENTER, text_font: mdi_icons_32, text_color: $tile_off_name, text: " "}
+                - label: {id: wx_d0_hi, width: 100%, text_align: CENTER, text_font: nunito_24, text_color: $tile_off_name, text: "--°"}
+                - label: {id: wx_d0_lo, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--°"}
+            - obj:
+                id: wx_col1
+                flex_grow: 1
+                height: 100%
+                bg_opa: TRANSP
+                border_width: 0
+                pad_all: 4
+                scrollable: false
+                scrollbar_mode: "OFF"
+                layout: {type: FLEX, flex_flow: COLUMN, flex_align_main: CENTER, flex_align_cross: CENTER, pad_row: 4}
+                widgets:
+                - label: {id: wx_d1_day, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--"}
+                - label: {id: wx_d1_ic, width: 100%, text_align: CENTER, text_font: mdi_icons_32, text_color: $tile_off_name, text: " "}
+                - label: {id: wx_d1_hi, width: 100%, text_align: CENTER, text_font: nunito_24, text_color: $tile_off_name, text: "--°"}
+                - label: {id: wx_d1_lo, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--°"}
+            - obj:
+                id: wx_col2
+                flex_grow: 1
+                height: 100%
+                bg_opa: TRANSP
+                border_width: 0
+                pad_all: 4
+                scrollable: false
+                scrollbar_mode: "OFF"
+                layout: {type: FLEX, flex_flow: COLUMN, flex_align_main: CENTER, flex_align_cross: CENTER, pad_row: 4}
+                widgets:
+                - label: {id: wx_d2_day, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--"}
+                - label: {id: wx_d2_ic, width: 100%, text_align: CENTER, text_font: mdi_icons_32, text_color: $tile_off_name, text: " "}
+                - label: {id: wx_d2_hi, width: 100%, text_align: CENTER, text_font: nunito_24, text_color: $tile_off_name, text: "--°"}
+                - label: {id: wx_d2_lo, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--°"}
+            - obj:
+                id: wx_col3
+                flex_grow: 1
+                height: 100%
+                bg_opa: TRANSP
+                border_width: 0
+                pad_all: 4
+                scrollable: false
+                scrollbar_mode: "OFF"
+                layout: {type: FLEX, flex_flow: COLUMN, flex_align_main: CENTER, flex_align_cross: CENTER, pad_row: 4}
+                widgets:
+                - label: {id: wx_d3_day, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--"}
+                - label: {id: wx_d3_ic, width: 100%, text_align: CENTER, text_font: mdi_icons_32, text_color: $tile_off_name, text: " "}
+                - label: {id: wx_d3_hi, width: 100%, text_align: CENTER, text_font: nunito_24, text_color: $tile_off_name, text: "--°"}
+                - label: {id: wx_d3_lo, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--°"}
+            - obj:
+                id: wx_col4
+                flex_grow: 1
+                height: 100%
+                bg_opa: TRANSP
+                border_width: 0
+                pad_all: 4
+                scrollable: false
+                scrollbar_mode: "OFF"
+                layout: {type: FLEX, flex_flow: COLUMN, flex_align_main: CENTER, flex_align_cross: CENTER, pad_row: 4}
+                widgets:
+                - label: {id: wx_d4_day, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--"}
+                - label: {id: wx_d4_ic, width: 100%, text_align: CENTER, text_font: mdi_icons_32, text_color: $tile_off_name, text: " "}
+                - label: {id: wx_d4_hi, width: 100%, text_align: CENTER, text_font: nunito_24, text_color: $tile_off_name, text: "--°"}
+                - label: {id: wx_d4_lo, width: 100%, text_align: CENTER, text_font: nunito_18, text_color: $tile_off_status, text: "--°"}
+
+# ── Serviço chamado pela automação do HA com a previsão ────────────────────────
+# Variáveis escalares (não arrays): api actions com string[]/float[] não linkam
+# na build ESP-IDF do ESPHome 2026.6.x.
+api:
+  actions:
+  - action: set_forecast
+    variables:
+      day1: string
+      day2: string
+      day3: string
+      day4: string
+      day5: string
+      cond1: string
+      cond2: string
+      cond3: string
+      cond4: string
+      cond5: string
+      hi1: float
+      hi2: float
+      hi3: float
+      hi4: float
+      hi5: float
+      lo1: float
+      lo2: float
+      lo3: float
+      lo4: float
+      lo5: float
+    then:
+    - lambda: |-
+        lv_obj_t *dl[5] = {id(wx_d0_day), id(wx_d1_day), id(wx_d2_day), id(wx_d3_day), id(wx_d4_day)};
+        lv_obj_t *il[5] = {id(wx_d0_ic),  id(wx_d1_ic),  id(wx_d2_ic),  id(wx_d3_ic),  id(wx_d4_ic)};
+        lv_obj_t *hl[5] = {id(wx_d0_hi),  id(wx_d1_hi),  id(wx_d2_hi),  id(wx_d3_hi),  id(wx_d4_hi)};
+        lv_obj_t *ll[5] = {id(wx_d0_lo),  id(wx_d1_lo),  id(wx_d2_lo),  id(wx_d3_lo),  id(wx_d4_lo)};
+        const std::string ds[5] = {day1, day2, day3, day4, day5};
+        const std::string cs[5] = {cond1, cond2, cond3, cond4, cond5};
+        const float hs[5] = {hi1, hi2, hi3, hi4, hi5};
+        const float ls[5] = {lo1, lo2, lo3, lo4, lo5};
+        auto icon_for = [](const std::string &c) -> const char* {
+          if (c == "sunny") return "${mdi_weather_sunny}";
+          // Na previsão DIÁRIA, "clear-night" (condição no horário de
+          // referência, madrugada) vira sol — dia de céu limpo.
+          if (c == "clear-night") return "${mdi_weather_sunny}";
+          if (c == "partlycloudy") return "${mdi_weather_partly_cloudy}";
+          if (c == "cloudy") return "${mdi_weather_cloudy}";
+          if (c == "rainy") return "${mdi_weather_rainy}";
+          if (c == "pouring") return "${mdi_weather_pouring}";
+          if (c == "lightning") return "${mdi_weather_lightning}";
+          if (c == "lightning-rainy") return "${mdi_weather_lightning_rainy}";
+          if (c == "fog") return "${mdi_weather_fog}";
+          if (c == "snowy") return "${mdi_weather_snowy}";
+          if (c == "snowy-rainy") return "${mdi_weather_snowy_rainy}";
+          if (c == "windy") return "${mdi_weather_windy}";
+          if (c == "windy-variant") return "${mdi_weather_windy_variant}";
+          if (c == "hail") return "${mdi_weather_hail}";
+          return "${mdi_weather_partly_cloudy}";
+        };
+        for (size_t i = 0; i < 5; i++) {
+          if (ds[i].empty()) continue;
+          lv_label_set_text(dl[i], ds[i].c_str());
+          lv_label_set_text(il[i], icon_for(cs[i]));
+          lv_label_set_text(hl[i], str_sprintf("%.0f°", hs[i]).c_str());
+          lv_label_set_text(ll[i], str_sprintf("%.0f°", ls[i]).c_str());
+        }
+
+# ── Condições atuais por assinatura ────────────────────────────────────────────
+text_sensor:
+- platform: homeassistant
+  id: wx_ha_cond
+  entity_id: ${weather_entity}
+  on_value:
+  - lambda: |-
+      std::string c = x;
+      const char *ic = "${mdi_weather_partly_cloudy}";
+      std::string label = c;
+      if (c == "sunny")            { ic = "${mdi_weather_sunny}"; label = "Ensolarado"; }
+      else if (c == "clear-night") { ic = "${mdi_weather_night}"; label = "Céu limpo"; }
+      else if (c == "partlycloudy"){ ic = "${mdi_weather_partly_cloudy}"; label = "Parcialmente nublado"; }
+      else if (c == "cloudy")      { ic = "${mdi_weather_cloudy}"; label = "Nublado"; }
+      else if (c == "rainy")       { ic = "${mdi_weather_rainy}"; label = "Chuva"; }
+      else if (c == "pouring")     { ic = "${mdi_weather_pouring}"; label = "Chuva forte"; }
+      else if (c == "lightning")   { ic = "${mdi_weather_lightning}"; label = "Trovoadas"; }
+      else if (c == "lightning-rainy") { ic = "${mdi_weather_lightning_rainy}"; label = "Chuva com trovoadas"; }
+      else if (c == "fog")         { ic = "${mdi_weather_fog}"; label = "Névoa"; }
+      else if (c == "snowy")       { ic = "${mdi_weather_snowy}"; label = "Neve"; }
+      else if (c == "snowy-rainy") { ic = "${mdi_weather_snowy_rainy}"; label = "Neve com chuva"; }
+      else if (c == "windy" || c == "windy-variant") { ic = "${mdi_weather_windy}"; label = "Ventando"; }
+      else if (c == "hail")        { ic = "${mdi_weather_hail}"; label = "Granizo"; }
+      lv_label_set_text(id(wx_cur_ic), ic);
+      lv_label_set_text(id(wx_cond_label), label.c_str());
+
+sensor:
+- platform: homeassistant
+  id: wx_ha_temp
+  entity_id: ${weather_entity}
+  attribute: temperature
+  on_value:
+  - lambda: |-
+      if (std::isnan(x)) return;
+      lv_label_set_text(id(wx_cur_temp), str_sprintf("%.1f°", x).c_str());
+
+- platform: homeassistant
+  id: wx_ha_hum
+  entity_id: ${weather_entity}
+  attribute: humidity
+  on_value:
+  - lambda: if (!std::isnan(x)) id(wx_hum) = x;
+  - script.execute: wx_update_info
+
+- platform: homeassistant
+  id: wx_ha_wind
+  entity_id: ${weather_entity}
+  attribute: wind_speed
+  on_value:
+  - lambda: if (!std::isnan(x)) id(wx_wind) = x;
+  - script.execute: wx_update_info
+
+script:
+- id: wx_update_info
+  then:
+  - lambda: |-
+      std::string info;
+      if (id(wx_hum) >= 0.0f)  info += str_sprintf("Umidade %.0f%%", id(wx_hum));
+      if (id(wx_wind) >= 0.0f) {
+        if (!info.empty()) info += "  ·  ";
+        info += str_sprintf("Vento %.0f km/h", id(wx_wind));
+      }
+      lv_label_set_text(id(wx_info_label), info.c_str());

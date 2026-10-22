@@ -1,0 +1,85 @@
+---
+# Tile do alarme (alarm_control_panel) — SOMENTE LEITURA.
+# Mostra o estado e abre a página de segurança ao toque.
+#
+# De propósito NÃO arma/desarma: um toque acidental num painel de parede não
+# pode disparar nem desarmar o alarme do escritório. Se você quiser o comando
+# aqui depois, dá para trocar o on_short_click por alarm_control_panel.alarm_arm_away
+# (e aí precisa tratar o código, se o seu painel exigir).
+#
+# vars:
+#   uid, entity_id, target_page, row, column, text, icon
+#   page_id  (default main_page)
+
+lvgl:
+  pages:
+  - id: !extend ${page_id | default("main_page")}
+    widgets:
+    - button:
+        id: button_${uid}
+        grid_cell_row_pos: ${row}
+        grid_cell_column_pos: ${column}
+        grid_cell_x_align: STRETCH
+        grid_cell_y_align: STRETCH
+        radius: 18
+        bg_color: $tile_off_bg
+        pad_all: 4
+        layout:
+          type: FLEX
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_row: 2
+        widgets:
+        - label:
+            id: icon_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_icon_font
+            text_color: $tile_off_icon
+            text: ${icon}
+        - label:
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_name_font
+            text_color: $tile_off_name
+            text: ${text}
+        - label:
+            id: status_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_status_font
+            text_color: $tile_off_status
+            text: "--"
+        on_short_click:
+          then:
+          - lvgl.page.show:
+              id: ${target_page}
+              animation: OVER_LEFT
+              time: 150ms
+
+text_sensor:
+- platform: homeassistant
+  id: ${uid}_ha_state
+  entity_id: ${entity_id}
+  on_value:
+  - lambda: |-
+      // disarmed | arming | pending | armed_home | armed_away | armed_night
+      // | armed_vacation | armed_custom_bypass | triggered
+      const char *rotulo;
+      uint32_t cor_fundo, cor_texto;
+      if (x == "triggered") {
+        rotulo = "DISPARADO";  cor_fundo = 0xE24B4A;      cor_texto = 0xFFFFFF;
+      } else if (x == "disarmed") {
+        rotulo = "Desarmado";  cor_fundo = ${tile_off_bg}; cor_texto = ${tile_off_name};
+      } else if (x == "arming" || x == "pending") {
+        rotulo = "Armando...";  cor_fundo = ${tile_on_bg};  cor_texto = ${tile_on_fg};
+      } else if (x.rfind("armed", 0) == 0) {
+        rotulo = "Armado";     cor_fundo = ${tile_on_bg};  cor_texto = ${tile_on_fg};
+      } else {
+        rotulo = x.c_str();    cor_fundo = ${tile_off_bg}; cor_texto = ${tile_off_name};
+      }
+      lv_obj_set_style_bg_color(id(button_${uid}), lv_color_hex(cor_fundo), 0);
+      lv_obj_set_style_text_color(id(icon_${uid}), lv_color_hex(cor_texto), 0);
+      lv_label_set_text(id(status_${uid}), rotulo);
+      lv_obj_set_style_text_color(id(status_${uid}), lv_color_hex(cor_texto), 0);

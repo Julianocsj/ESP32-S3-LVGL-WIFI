@@ -1,0 +1,69 @@
+---
+# Tile compacto de luz/switch — ícone + nome, sem linha de status.
+# Feito para a grade 3x4 da página Luzes, onde o tile_switch normal não cabe.
+# Aceita qualquer domínio que responda a homeassistant.toggle (light/switch).
+#
+# vars:
+#   uid, entity_id, row, column, text, icon
+#   page_id  (default luzes_page)
+
+globals:
+- id: ${uid}_is_on
+  type: bool
+  initial_value: 'false'
+
+lvgl:
+  pages:
+  - id: !extend ${page_id | default("luzes_page")}
+    widgets:
+    - button:
+        id: button_${uid}
+        grid_cell_row_pos: ${row}
+        grid_cell_column_pos: ${column}
+        grid_cell_x_align: STRETCH
+        grid_cell_y_align: STRETCH
+        radius: 14
+        bg_color: $tile_off_bg
+        pad_all: 2
+        layout:
+          type: FLEX
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_row: 2
+        widgets:
+        - label:
+            id: icon_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $sm_icon_font
+            text_color: $tile_off_icon
+            text: ${icon}
+        - label:
+            id: name_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $sm_name_font
+            text_color: $tile_off_name
+            text: ${text}
+        on_short_click:
+          then:
+          - homeassistant.action:
+              action: homeassistant.toggle
+              data:
+                entity_id: ${entity_id}
+
+binary_sensor:
+- platform: homeassistant
+  id: ${uid}_ha_state
+  entity_id: ${entity_id}
+  trigger_on_initial_state: true
+  on_state:
+  - lambda: |-
+      id(${uid}_is_on) = x;
+      lv_obj_set_style_bg_color(id(button_${uid}),
+        lv_color_hex(x ? ${tile_on_bg} : ${tile_off_bg}), 0);
+      lv_obj_set_style_text_color(id(icon_${uid}),
+        lv_color_hex(x ? ${tile_on_fg} : ${tile_off_icon}), 0);
+      lv_obj_set_style_text_color(id(name_${uid}),
+        lv_color_hex(x ? ${tile_on_fg} : ${tile_off_name}), 0);

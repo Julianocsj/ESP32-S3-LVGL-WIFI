@@ -1,0 +1,114 @@
+---
+# Tile flat customizado — alterna um switch/input_boolean no HA.
+# Layout: ícone central grande + nome + status ("Ligado"/"Desligado").
+# Cores vêm de substitutions do arquivo principal (tema laranja).
+#
+# vars:
+#   uid, entity_id, row, column, text, icon
+#   page_id       (default main_page)
+#   status_on     (default "Ligado")
+#   status_off    (default "Desligado")
+#   row_span / column_span (default 1)
+
+globals:
+- id: ${uid}_is_on
+  type: bool
+  initial_value: 'false'
+
+lvgl:
+  pages:
+  - id: !extend ${page_id | default("main_page")}
+    widgets:
+    - button:
+        id: button_${uid}
+        grid_cell_row_pos: ${row}
+        grid_cell_column_pos: ${column}
+        grid_cell_row_span: ${row_span | default(1)}
+        grid_cell_column_span: ${column_span | default(1)}
+        grid_cell_x_align: STRETCH
+        grid_cell_y_align: STRETCH
+        radius: 18
+        bg_color: $tile_off_bg
+        pad_all: 4
+        layout:
+          type: FLEX
+          flex_flow: COLUMN
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_row: 2
+        widgets:
+        - label:
+            id: icon_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_icon_font
+            text_color: $tile_off_icon
+            text: ${icon}
+        - label:
+            id: name_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_name_font
+            text_color: $tile_off_name
+            text: ${text}
+        - label:
+            id: status_${uid}
+            width: 100%
+            text_align: CENTER
+            text_font: $tile_status_font
+            text_color: $tile_off_status
+            text: ${status_off | default("Desligado")}
+        on_short_click:
+          then:
+          - script.execute: ${uid}_toggle
+
+binary_sensor:
+- platform: homeassistant
+  id: ${uid}_ha_state
+  entity_id: ${entity_id}
+  trigger_on_initial_state: true
+  on_state:
+  - lambda: id(${uid}_is_on) = x;
+  - script.execute: ${uid}_sync
+
+script:
+- id: ${uid}_toggle
+  then:
+  - homeassistant.action:
+      action: homeassistant.toggle
+      data:
+        entity_id: ${entity_id}
+
+- id: ${uid}_sync
+  then:
+  - if:
+      condition:
+        lambda: return id(${uid}_is_on);
+      then:
+      - lvgl.widget.update:
+          id: button_${uid}
+          bg_color: $tile_on_bg
+      - lvgl.label.update:
+          id: icon_${uid}
+          text_color: $tile_on_fg
+      - lvgl.label.update:
+          id: name_${uid}
+          text_color: $tile_on_fg
+      - lvgl.label.update:
+          id: status_${uid}
+          text_color: $tile_on_fg
+          text: ${status_on | default("Ligado")}
+      else:
+      - lvgl.widget.update:
+          id: button_${uid}
+          bg_color: $tile_off_bg
+      - lvgl.label.update:
+          id: icon_${uid}
+          text_color: $tile_off_icon
+      - lvgl.label.update:
+          id: name_${uid}
+          text_color: $tile_off_name
+      - lvgl.label.update:
+          id: status_${uid}
+          text_color: $tile_off_status
+          text: ${status_off | default("Desligado")}

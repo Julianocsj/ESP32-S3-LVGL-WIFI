@@ -1,0 +1,1031 @@
+---
+# =============================================================================
+# EXEMPLO COMPLETO — Guition ESP32-4848S040 (480x480)
+#
+# Exemplo completo com 42 entidades de um escritório fictício. Ele NÃO vai
+# funcionar como está: os entity_id são ilustrativos. Use como referência —
+# comece pelo painel-minimo.yaml e traga daqui os pedaços que fizerem sentido.
+#
+# Estrutura:
+#
+#   Início (2x3)     Letreiro · Mesa Geral · Luzes> · Climatização>
+#                    Alarme> · Solar>
+#   Barra de topo    relógio+temp externa (toque = previsão) · [Salas]
+#                    [Temperaturas] [engrenagem = Tela]
+#   Luzes            grade 3x4 com os 12 pontos de luz
+#   Climatização     4 ar-condicionados, cada um com página de detalhe
+#                    (setpoint +/-, modos Auto/Frio/Quente/Off)
+#   Segurança        alarme + 7 pontos de perímetro + bateria (rola)
+#   Salas            presença, portas internas, pessoa e Chromecast
+#   Temperaturas     6 sensores de temperatura/umidade
+#   Solar            geração agora, hoje, previsão e total
+#   Previsão         condição atual + 5 dias (precisa da automação do HA)
+#   Tela             brilho, timeout e desligar
+#
+# Gravar com:  ..\painel.ps1 flash
+# =============================================================================
+
+substitutions:
+  icon_font: mdi_icons_40
+  text_font: nunito_20
+  glyphsets: "GF_Latin_Core"
+
+  # Cores herdadas do tema (exigidas pelos pacotes base do repo)
+  text_color: white
+  bg_color: black
+  button_on_color: "ep_orange"
+  button_off_color: "very_dark_gray"
+  icon_on_color: "yellow"
+  icon_off_color: "gray"
+  label_on_color: "white"
+  label_off_color: "gray"
+  button_text_color: "white"
+
+  # ── Tema Laranja (flat) ─────────────────────────────────────────────────────
+  tile_off_bg: "0x241E17"
+  tile_off_icon: "0x8A7F74"
+  tile_off_name: "0xD8CEC3"
+  tile_off_status: "0x8A7F74"
+  tile_on_bg: "0xF37320"
+  tile_on_fg: "0x3A1B08"
+  tile_icon_font: mdi_icons_40
+  tile_name_font: nunito_20
+  tile_status_font: nunito_14
+
+  # Tiles compactos (página Luzes, 12 numa grade 3x4)
+  sm_icon_font: mdi_icons_28
+  sm_name_font: nunito_14
+
+  # Linhas de leitura (Segurança, Salas, Temperaturas, Solar)
+  row_icon_font: mdi_icons_28
+  row_name_font: nunito_20
+  row_value_font: nunito_24
+  row_status_font: nunito_18
+
+  # Backlight
+  display_daytime_brightness: "100%"
+  display_nighttime_brightness: "60%"
+  display_night_hour: "22"
+  display_night_minute: "30"
+  display_backlight_timeout_always_enabled: "true"
+  display_backlight_timeout_initial: "10"
+
+esp32:
+  cpu_frequency: 240MHz
+
+esphome:
+  name: painel-exemplo
+  friendly_name: Painel Exemplo
+  comment: "Exemplo completo — troque os entity_id pelos do seu HA"
+  on_boot:
+    - priority: 400
+      then:
+        - script.execute: update_loading_page
+
+logger:
+  level: INFO
+  baud_rate: 0
+
+# Temperatura externa mostrada na barra de topo, ao lado do relógio
+sensor:
+  - platform: homeassistant
+    id: topbar_temp
+    entity_id: sensor.externo_temperatura
+    on_value:
+      - lambda: |-
+          if (std::isnan(x)) return;
+          lv_label_set_text(id(temp_label), str_sprintf("%.1f°", x).c_str());
+
+script:
+  # Relógio 24h — chamado pelo backlight_time a cada minuto e no sync com HA
+  - id: time_update
+    then:
+      - lambda: |-
+          auto now = id(system_time).now();
+          std::string t = now.is_valid() ? now.strftime("%H:%M") : std::string("--:--");
+          lv_label_set_text(id(time_label), t.c_str());
+          lv_label_set_text(id(time_label_top), t.c_str());
+
+  # Destaca o chip do timeout ativo na página Tela
+  - id: tela_sync_timeout
+    then:
+      - lambda: |-
+          float v = id(display_backlight_timeout).state;
+          struct Chip { lv_obj_t *b; lv_obj_t *l; bool sel; };
+          Chip cs[] = {
+            { id(tmo_chip_1),     id(tmo_lb_1),     fabsf(v - 1.0f) < 0.5f },
+            { id(tmo_chip_5),     id(tmo_lb_5),     fabsf(v - 5.0f) < 0.5f },
+            { id(tmo_chip_10),    id(tmo_lb_10),    fabsf(v - 10.0f) < 0.5f },
+            { id(tmo_chip_30),    id(tmo_lb_30),    fabsf(v - 30.0f) < 0.5f },
+            { id(tmo_chip_never), id(tmo_lb_never), v < 0.0f },
+          };
+          for (auto &c : cs) {
+            lv_obj_set_style_bg_color(c.b, lv_color_hex(c.sel ? 0xF37320 : 0x241E17), 0);
+            lv_obj_set_style_text_color(c.l, lv_color_hex(c.sel ? 0x3A1B08 : 0x8A7F74), 0);
+          }
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  ap:
+    password: !secret ap_password
+
+captive_portal:
+
+packages:
+  ota_screen: !include esphome-modular-lvgl-buttons/common/ota.yaml
+  theme: !include esphome-modular-lvgl-buttons/common/theme/index.yaml
+  sensors: !include esphome-modular-lvgl-buttons/common/sensors_base.yaml
+  backlight: !include esphome-modular-lvgl-buttons/common/backlight_time.yaml
+
+  hardware: !include
+    file: esphome-modular-lvgl-buttons/hardware/guition-esp32-s3-4848s040.yaml
+    vars:
+      rotation: "0"   # neste board, só "0" renderiza (180 = tela preta)
+
+  loading_screen: !include esphome-modular-lvgl-buttons/pages/loading.yaml
+  info_screen: !include esphome-modular-lvgl-buttons/pages/info.yaml
+
+  # ── INÍCIO: atalhos diretos ─────────────────────────────────────────────────
+  t_logo: !include
+    file: custom/tile_switch.yaml
+    vars: {uid: t_logo, entity_id: "light.letreiro", row: 1, column: 0, text: "Letreiro", icon: $mdi_led_strip_variant}
+
+  t_mesa: !include
+    file: custom/tile_switch.yaml
+    vars: {uid: t_mesa, entity_id: "light.mesa_geral", row: 1, column: 1, text: "Mesa Geral", icon: $mdi_ceiling_light}
+
+  # ── INÍCIO: navegação ───────────────────────────────────────────────────────
+  nav_luzes: !include
+    file: custom/tile_nav.yaml
+    vars: {uid: nav_luzes, target_page: luzes_page, row: 2, column: 0, text: "Luzes", icon: $mdi_lightbulb_group, subtitle: "12 pontos"}
+
+  nav_clima: !include
+    file: custom/tile_nav.yaml
+    vars: {uid: nav_clima, target_page: clima_page, row: 2, column: 1, text: "Climatização", icon: $mdi_air_conditioner, subtitle: "4 aparelhos"}
+
+  t_alarme: !include
+    file: custom/tile_alarm.yaml
+    vars: {uid: t_alarme, entity_id: "alarm_control_panel.alarm_panel", target_page: seguranca_page, row: 3, column: 0, text: "Alarme", icon: $mdi_shield_home}
+
+  nav_solar: !include
+    file: custom/tile_nav.yaml
+    vars: {uid: nav_solar, target_page: solar_page, row: 3, column: 1, text: "Solar", icon: $mdi_solar_power, subtitle: "geração"}
+
+  # ── LUZES (grade 3x4 — os 12 pontos) ────────────────────────────────────────
+  l01: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l01, entity_id: "light.letreiro", row: 1, column: 0, text: "Letreiro", icon: $mdi_led_strip_variant}
+  l02: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l02, entity_id: "light.mesa_geral", row: 1, column: 1, text: "Mesa Geral", icon: $mdi_ceiling_light}
+  l03: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l03, entity_id: "light.corredor_entrada", row: 1, column: 2, text: "Corr. Entrada", icon: $mdi_track_light}
+  l04: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l04, entity_id: "light.corredor_2", row: 2, column: 0, text: "Corredor 2", icon: $mdi_track_light}
+  l05: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l05, entity_id: "light.pendentes", row: 2, column: 1, text: "Pendentes", icon: $mdi_lightbulb_multiple}
+  l06: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l06, entity_id: "light.reuniao_led", row: 2, column: 2, text: "LED Reunião", icon: $mdi_led_strip_variant}
+  l07: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l07, entity_id: "light.reuniao_spots", row: 3, column: 0, text: "Spots Reunião", icon: $mdi_spotlight_beam}
+  l08: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l08, entity_id: "light.reuniao_spot", row: 3, column: 1, text: "Spot Reunião", icon: $mdi_spotlight_beam}
+  l09: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l09, entity_id: "switch.sala_2_todas", row: 3, column: 2, text: "Tudo Sala 2", icon: $mdi_lightbulb_group}
+  l10: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l10, entity_id: "light.sala_1_pendente", row: 4, column: 0, text: "Pend. Sala 1", icon: $mdi_lightbulb_multiple}
+  l11: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l11, entity_id: "light.sala_1_janela", row: 4, column: 1, text: "Janela Sala 1", icon: $mdi_desk_lamp}
+  l12: !include
+    file: custom/tile_light_sm.yaml
+    vars: {uid: l12, entity_id: "light.estudio", row: 4, column: 2, text: "Estúdio", icon: $mdi_home_lightbulb}
+
+  # ── CLIMATIZAÇÃO (4 aparelhos, cada um com detalhe) ─────────────────────────
+  ac_geral: !include
+    file: custom/tile_climate.yaml
+    vars: {uid: ac_geral, entity_id: "climate.ar_sala_geral", room_sensor: "sensor.sala_geral_temperatura", page_id: clima_page, row: 1, column: 0, text: "Sala Geral", icon: $mdi_air_conditioner}
+  ac_reuniao: !include
+    file: custom/tile_climate.yaml
+    vars: {uid: ac_reuniao, entity_id: "climate.ar_sala_reuniao", room_sensor: "sensor.sala_reuniao_temperatura", page_id: clima_page, row: 1, column: 1, text: "Reunião", icon: $mdi_air_conditioner}
+  ac_sala2: !include
+    file: custom/tile_climate.yaml
+    vars: {uid: ac_sala2, entity_id: "climate.ar_sala_2", room_sensor: "sensor.sala_2_temperatura", page_id: clima_page, row: 2, column: 0, text: "Sala 2", icon: $mdi_air_conditioner}
+  # room_sensor pode apontar para o sensor de outro ambiente, se este não tiver
+  ac_estudio: !include
+    file: custom/tile_climate.yaml
+    vars: {uid: ac_estudio, entity_id: "climate.ar_estudio", room_sensor: "sensor.sala_1_temperatura", page_id: clima_page, row: 2, column: 1, text: "Estúdio", icon: $mdi_air_conditioner}
+
+  # ── SEGURANÇA (alarme + perímetro) ──────────────────────────────────────────
+  sg_alarme: !include
+    file: custom/row_text.yaml
+    vars: {uid: sg_alarme, entity_id: "alarm_control_panel.alarme", page_id: seguranca_page, text: "Alarme", icon: $mdi_shield_home, state_on: "disarmed", status_on: "Desarmado", status_off: "Armado", on_color: "0x8A7F74", height: 56}
+  sg_p_1: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sg_p_1, entity_id: "binary_sensor.porta_1", page_id: seguranca_page, text: "Porta 1", icon: $mdi_door_closed, on_color: "0xE24B4A", height: 56}
+  sg_p_2: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sg_p_2, entity_id: "binary_sensor.porta_2", page_id: seguranca_page, text: "Porta 2", icon: $mdi_door_closed, on_color: "0xE24B4A", height: 56}
+  sg_p_vidro: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sg_p_vidro, entity_id: "binary_sensor.porta_vidro", page_id: seguranca_page, text: "Porta de Vidro", icon: $mdi_door_sliding, on_color: "0xE24B4A", height: 56}
+  sg_portao: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sg_portao, entity_id: "binary_sensor.portao", page_id: seguranca_page, text: "Portão", icon: $mdi_garage, on_color: "0xE24B4A", height: 56}
+  sg_janela: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sg_janela, entity_id: "binary_sensor.janela_1", page_id: seguranca_page, text: "Janela 1", icon: $mdi_window_closed_variant, on_color: "0xE24B4A", height: 56}
+  sg_barreira: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sg_barreira, entity_id: "binary_sensor.barreira", page_id: seguranca_page, text: "Barreira", icon: $mdi_gate, status_on: "Rompida", status_off: "Livre", on_color: "0xE24B4A", height: 56}
+  sg_cerca: !include
+    file: custom/row_text.yaml
+    vars: {uid: sg_cerca, entity_id: "sensor.cerca_eletrica", page_id: seguranca_page, text: "Cerca Elétrica", icon: $mdi_fence_electric, state_on: "True", status_on: "Armada", status_off: "Desarmada", height: 56}
+  sg_bateria: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: sg_bateria, entity_id: "sensor.alarme_bateria", page_id: seguranca_page, text: "Bateria do Alarme", icon: $mdi_battery_medium, unit: "%", decimals: 0, height: 56}
+
+  # ── SALAS (presença, portas internas, contexto) ─────────────────────────────
+  sl_mov_1: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sl_mov_1, entity_id: "binary_sensor.movimento_garagem", page_id: salas_page, text: "Garagem", icon: $mdi_motion_sensor, status_on: "Movimento", status_off: "Parado", height: 56}
+  sl_mov_2: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sl_mov_2, entity_id: "binary_sensor.movimento_deposito", page_id: salas_page, text: "Depósito", icon: $mdi_motion_sensor, status_on: "Movimento", status_off: "Parado", height: 56}
+  sl_reuniao: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sl_reuniao, entity_id: "binary_sensor.porta_sala_reuniao", page_id: salas_page, text: "Porta Reunião", icon: $mdi_door_closed, height: 56}
+  sl_sala3: !include
+    file: custom/row_binary.yaml
+    vars: {uid: sl_sala3, entity_id: "binary_sensor.porta_sala_3", page_id: salas_page, text: "Porta Sala 3", icon: $mdi_door_closed, height: 56}
+  sl_pessoa: !include
+    file: custom/row_text.yaml
+    vars: {uid: sl_pessoa, entity_id: "person.exemplo", page_id: salas_page, text: "Pessoa", icon: $mdi_account, state_on: "home", status_on: "No escritório", status_off: "Fora", height: 56}
+  sl_cast: !include
+    file: custom/row_text.yaml
+    vars: {uid: sl_cast, entity_id: "media_player.tv_recepcao", page_id: salas_page, text: "TV Recepção", icon: $mdi_cast_connected, state_on: "playing", status_on: "Tocando", status_off: "Parado", height: 56}
+
+  # ── TEMPERATURAS ────────────────────────────────────────────────────────────
+  tp_ext: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: tp_ext, entity_id: "sensor.externo_temperatura", page_id: temps_page, text: "Externa", icon: $mdi_thermometer, unit: "°C", decimals: 1, height: 56}
+  tp_ext_um: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: tp_ext_um, entity_id: "sensor.externo_umidade", page_id: temps_page, text: "Umidade Externa", icon: $mdi_water_percent, unit: "%", decimals: 0, height: 56}
+  tp_geral: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: tp_geral, entity_id: "sensor.sala_geral_temperatura", page_id: temps_page, text: "Sala Geral", icon: $mdi_thermometer, unit: "°C", decimals: 1, height: 56}
+  tp_sala1: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: tp_sala1, entity_id: "sensor.sala_1_temperatura", page_id: temps_page, text: "Sala 1", icon: $mdi_thermometer, unit: "°C", decimals: 1, height: 56}
+  tp_sala2: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: tp_sala2, entity_id: "sensor.sala_2_temperatura", page_id: temps_page, text: "Sala 2", icon: $mdi_thermometer, unit: "°C", decimals: 1, height: 56}
+  tp_reuniao: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: tp_reuniao, entity_id: "sensor.sala_reuniao_temperatura", page_id: temps_page, text: "Sala de Reunião", icon: $mdi_thermometer, unit: "°C", decimals: 1, height: 56}
+
+  # ── SOLAR ───────────────────────────────────────────────────────────────────
+  so_agora: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: so_agora, entity_id: "sensor.inversor_potencia", page_id: solar_page, text: "Potência agora", icon: $mdi_solar_power, unit: "W", decimals: 0, height: 56}
+  so_hoje: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: so_hoje, entity_id: "sensor.inversor_energia_hoje", page_id: solar_page, text: "Energia hoje", icon: $mdi_flash, unit: "kWh", decimals: 1, height: 56}
+  so_prev: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: so_prev, entity_id: "sensor.power_production_now", page_id: solar_page, text: "Previsão agora", icon: $mdi_chart_line, unit: "W", decimals: 0, height: 56}
+  so_total: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: so_total, entity_id: "sensor.inversor_energia_total", page_id: solar_page, text: "Geração total", icon: $mdi_counter, unit: "kWh", decimals: 0, height: 56}
+
+  # ── PREVISÃO DO TEMPO (aberta tocando no relógio) ───────────────────────────
+  weather_pg: !include
+    file: custom/page_weather.yaml
+    vars:
+      weather_entity: "weather.forecast_casa"
+
+lvgl:
+  # Buffer parcial: com <=25% o ESPHome tenta alocar o draw buffer na SRAM
+  # interna antes de cair pra PSRAM, e renderizar na interna não disputa banda
+  # com a varredura contínua do display RGB.
+  buffer_size: 12%
+
+  # Relógio persistente acima de todas as páginas (o top_layer sobrevive ao
+  # page.show). Escondido na Início, que já tem relógio na própria barra.
+  top_layer:
+    widgets:
+      - label:
+          id: time_label_top
+          align: TOP_RIGHT
+          x: -12
+          y: 18
+          hidden: true
+          text_font: nunito_28
+          text_color: 0xD8CEC3
+          text: "--:--"
+
+  pages:
+    # ── INÍCIO (2x3) ──────────────────────────────────────────────────────────
+    - id: main_page
+      styles: page_style
+      pad_all: 12
+      layout:
+        type: GRID
+        grid_columns: [FR(1), FR(1)]
+        grid_rows: [CONTENT, FR(1), FR(1), FR(1)]
+        pad_row: 8
+        pad_column: 8
+      on_load:
+        - lvgl.widget.hide: time_label_top
+      on_unload:
+        - lvgl.widget.show: time_label_top
+      <<: !include esphome-modular-lvgl-buttons/common/swipe_navigation.yaml
+      widgets:
+        - obj:
+            grid_cell_row_pos: 0
+            grid_cell_column_pos: 0
+            grid_cell_column_span: 2
+            grid_cell_x_align: STRETCH
+            grid_cell_y_align: CENTER
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              # alvo de toque invisível sob o relógio/temperatura -> Previsão
+              - button:
+                  id: btn_weather
+                  align: LEFT_MID
+                  width: 160
+                  height: 56
+                  bg_opa: TRANSP
+                  shadow_width: 0
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: weather_page
+                          animation: OVER_LEFT
+                          time: 150ms
+              - label:
+                  id: time_label
+                  align: LEFT_MID
+                  text_font: nunito_28
+                  text_color: 0xD8CEC3
+                  text: "--:--"
+              - label:
+                  id: temp_label
+                  align: LEFT_MID
+                  x: 94
+                  y: 2
+                  text_font: nunito_18
+                  text_color: 0x8A7F74
+                  text: ""
+              - button:
+                  id: btn_salas
+                  align: RIGHT_MID
+                  x: -116
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: salas_page
+                          animation: OVER_LEFT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_32
+                        text_color: 0x8A7F74
+                        text: $mdi_motion_sensor
+              - button:
+                  id: btn_temps
+                  align: RIGHT_MID
+                  x: -58
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: temps_page
+                          animation: OVER_LEFT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_32
+                        text_color: 0x8A7F74
+                        text: $mdi_thermometer
+              - button:
+                  id: btn_settings
+                  align: RIGHT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.slider.update:
+                          id: brightness_slider
+                          value: !lambda 'return (int)(id(display_backlight).current_values.get_brightness() * 100.0f);'
+                      - script.execute: tela_sync_timeout
+                      - lvgl.page.show:
+                          id: brightness_page
+                          animation: OVER_LEFT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_32
+                        text_color: 0x8A7F74
+                        text: $mdi_cog
+
+    # ── LUZES (grade 3x4) ─────────────────────────────────────────────────────
+    - id: luzes_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: GRID
+        grid_columns: [FR(1), FR(1), FR(1)]
+        grid_rows: [CONTENT, FR(1), FR(1), FR(1), FR(1)]
+        pad_row: 8
+        pad_column: 8
+      widgets:
+        - obj:
+            grid_cell_row_pos: 0
+            grid_cell_column_pos: 0
+            grid_cell_column_span: 3
+            grid_cell_x_align: STRETCH
+            grid_cell_y_align: CENTER
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_luzes
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Luzes"
+
+    # ── CLIMATIZAÇÃO (2x2) ────────────────────────────────────────────────────
+    - id: clima_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: GRID
+        grid_columns: [FR(1), FR(1)]
+        grid_rows: [CONTENT, FR(1), FR(1)]
+        pad_row: 8
+        pad_column: 8
+      widgets:
+        - obj:
+            grid_cell_row_pos: 0
+            grid_cell_column_pos: 0
+            grid_cell_column_span: 2
+            grid_cell_x_align: STRETCH
+            grid_cell_y_align: CENTER
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_clima
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Climatização"
+
+    # ── SEGURANÇA (lista; rola se passar da tela) ─────────────────────────────
+    - id: seguranca_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+        pad_row: 8
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_seg
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Segurança"
+
+    # ── SALAS ─────────────────────────────────────────────────────────────────
+    - id: salas_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+        pad_row: 8
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_salas
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Salas"
+
+    # ── TEMPERATURAS ──────────────────────────────────────────────────────────
+    - id: temps_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+        pad_row: 8
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_temps
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Temperaturas"
+
+    # ── SOLAR ─────────────────────────────────────────────────────────────────
+    - id: solar_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+        pad_row: 8
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_solar
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Solar"
+
+    # ── TELA (brilho, timeout, desligar) ──────────────────────────────────────
+    - id: brightness_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_bright
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Tela"
+        - obj:
+            width: 100%
+            flex_grow: 1
+            bg_opa: TRANSP
+            border_width: 0
+            layout:
+              type: FLEX
+              flex_flow: COLUMN
+              flex_align_main: CENTER
+              flex_align_cross: CENTER
+              pad_row: 16
+            widgets:
+              - obj:
+                  width: 100%
+                  height: 44
+                  bg_opa: TRANSP
+                  border_width: 0
+                  pad_left: 8
+                  pad_right: 8
+                  pad_top: 0
+                  pad_bottom: 0
+                  scrollable: false
+                  scrollbar_mode: "OFF"
+                  widgets:
+                    - label:
+                        align: LEFT_MID
+                        text_font: nunito_20
+                        text_color: 0xD8CEC3
+                        text: "Brilho"
+                    - label:
+                        id: brightness_pct_label
+                        align: RIGHT_MID
+                        text_font: nunito_36
+                        text_color: 0xD8CEC3
+                        text: "80%"
+              - obj:
+                  width: 100%
+                  height: 44
+                  bg_opa: TRANSP
+                  border_width: 0
+                  pad_left: 16
+                  pad_right: 16
+                  pad_top: 0
+                  pad_bottom: 0
+                  scrollable: false
+                  scrollbar_mode: "OFF"
+                  widgets:
+                    - slider:
+                        id: brightness_slider
+                        align: CENTER
+                        width: 100%
+                        min_value: 10
+                        max_value: 100
+                        value: 80
+                        bg_color: 0x241E17
+                        indicator:
+                          bg_color: 0xF37320
+                        knob:
+                          bg_color: 0xF37320
+                        on_value:
+                          then:
+                            - light.turn_on:
+                                id: display_backlight
+                                brightness: !lambda 'return x / 100.0f;'
+                                transition_length: 0s
+                            - lvgl.label.update:
+                                id: brightness_pct_label
+                                text: !lambda 'return str_sprintf("%d%%", (int)x);'
+              - obj:
+                  width: 100%
+                  height: 12
+                  bg_opa: TRANSP
+                  border_width: 0
+                  pad_all: 0
+                  scrollable: false
+                  scrollbar_mode: "OFF"
+              - label:
+                  width: 100%
+                  text_align: LEFT
+                  text_font: nunito_14
+                  text_color: 0x8A7F74
+                  text: "Desligar após"
+              - obj:
+                  width: 100%
+                  height: 52
+                  bg_opa: TRANSP
+                  border_width: 0
+                  pad_left: 4
+                  pad_right: 4
+                  pad_top: 0
+                  pad_bottom: 0
+                  scrollable: false
+                  scrollbar_mode: "OFF"
+                  layout:
+                    type: FLEX
+                    flex_flow: ROW
+                    flex_align_main: SPACE_EVENLY
+                    flex_align_cross: CENTER
+                    pad_column: 8
+                  widgets:
+                    - button:
+                        id: tmo_chip_1
+                        flex_grow: 1
+                        height: 46
+                        radius: 23
+                        bg_color: 0x241E17
+                        pad_all: 0
+                        on_short_click:
+                          then:
+                            - number.set: {id: display_backlight_timeout, value: 1}
+                            - script.execute: tela_sync_timeout
+                        widgets:
+                          - label: {id: tmo_lb_1, align: CENTER, text_font: nunito_14, text_color: 0x8A7F74, text: "1 min"}
+                    - button:
+                        id: tmo_chip_5
+                        flex_grow: 1
+                        height: 46
+                        radius: 23
+                        bg_color: 0x241E17
+                        pad_all: 0
+                        on_short_click:
+                          then:
+                            - number.set: {id: display_backlight_timeout, value: 5}
+                            - script.execute: tela_sync_timeout
+                        widgets:
+                          - label: {id: tmo_lb_5, align: CENTER, text_font: nunito_14, text_color: 0x8A7F74, text: "5 min"}
+                    - button:
+                        id: tmo_chip_10
+                        flex_grow: 1
+                        height: 46
+                        radius: 23
+                        bg_color: 0x241E17
+                        pad_all: 0
+                        on_short_click:
+                          then:
+                            - number.set: {id: display_backlight_timeout, value: 10}
+                            - script.execute: tela_sync_timeout
+                        widgets:
+                          - label: {id: tmo_lb_10, align: CENTER, text_font: nunito_14, text_color: 0x8A7F74, text: "10 min"}
+                    - button:
+                        id: tmo_chip_30
+                        flex_grow: 1
+                        height: 46
+                        radius: 23
+                        bg_color: 0x241E17
+                        pad_all: 0
+                        on_short_click:
+                          then:
+                            - number.set: {id: display_backlight_timeout, value: 30}
+                            - script.execute: tela_sync_timeout
+                        widgets:
+                          - label: {id: tmo_lb_30, align: CENTER, text_font: nunito_14, text_color: 0x8A7F74, text: "30 min"}
+                    - button:
+                        id: tmo_chip_never
+                        flex_grow: 1
+                        height: 46
+                        radius: 23
+                        bg_color: 0x241E17
+                        pad_all: 0
+                        on_short_click:
+                          then:
+                            - number.set: {id: display_backlight_timeout, value: -1}
+                            - script.execute: tela_sync_timeout
+                        widgets:
+                          - label: {id: tmo_lb_never, align: CENTER, text_font: nunito_14, text_color: 0x8A7F74, text: "Nunca"}
+              - obj:
+                  width: 100%
+                  height: 12
+                  bg_opa: TRANSP
+                  border_width: 0
+                  pad_all: 0
+                  scrollable: false
+                  scrollbar_mode: "OFF"
+              - button:
+                  id: btn_screen_off
+                  width: 260
+                  height: 54
+                  radius: 27
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - light.turn_off: display_backlight
+                      - lvgl.pause:
+                          show_snow: false
+                  widgets:
+                    - label:
+                        align: CENTER
+                        x: -86
+                        text_font: mdi_icons_24
+                        text_color: 0xE24B4A
+                        text: $mdi_power
+                    - label:
+                        align: CENTER
+                        x: 14
+                        text_font: nunito_20
+                        text_color: 0xD8CEC3
+                        text: "Desligar a tela"
+
+    # info_screen existe (labels do sensors_base) mas sai do swipe e do acesso
+    - id: !extend info_screen
+      skip: true
+
+font:
+  # $tile_icon_font — tiles da Início e ícone grande da Previsão
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_40
+    size: 40
+    bpp: 8
+    glyphs: [$mdi_led_strip_variant, $mdi_ceiling_light, $mdi_air_conditioner, $mdi_lightbulb_group, $mdi_shield_home, $mdi_solar_power, $mdi_chevron_left, $mdi_snowflake, $mdi_weather_sunny, $mdi_weather_night, $mdi_weather_partly_cloudy, $mdi_weather_cloudy, $mdi_weather_rainy, $mdi_weather_pouring, $mdi_weather_lightning, $mdi_weather_lightning_rainy, $mdi_weather_fog, $mdi_weather_snowy, $mdi_weather_snowy_rainy, $mdi_weather_windy, $mdi_weather_windy_variant, $mdi_weather_hail]
+
+  # Relógio da barra de topo
+  - file: "esphome-modular-lvgl-buttons/assets/fonts/Nunito-SemiBold.ttf"
+    id: nunito_28
+    size: 28
+    bpp: 8
+    glyphsets: "GF_Latin_Core"
+
+  # Botões da barra de topo e colunas de dias da Previsão
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_32
+    size: 32
+    bpp: 8
+    glyphs: [$mdi_motion_sensor, $mdi_thermometer, $mdi_cog, $mdi_chevron_left, $mdi_weather_sunny, $mdi_weather_night, $mdi_weather_partly_cloudy, $mdi_weather_cloudy, $mdi_weather_rainy, $mdi_weather_pouring, $mdi_weather_lightning, $mdi_weather_lightning_rainy, $mdi_weather_fog, $mdi_weather_snowy, $mdi_weather_snowy_rainy, $mdi_weather_windy, $mdi_weather_windy_variant, $mdi_weather_hail]
+
+  # $sm_icon_font (tiles da Luzes) + $row_icon_font (todas as linhas de leitura)
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_28
+    size: 28
+    bpp: 8
+    glyphs: [$mdi_led_strip_variant, $mdi_ceiling_light, $mdi_track_light, $mdi_lightbulb_multiple, $mdi_spotlight_beam, $mdi_lightbulb_group, $mdi_desk_lamp, $mdi_home_lightbulb, $mdi_shield_home, $mdi_door_closed, $mdi_door_sliding, $mdi_garage, $mdi_window_closed_variant, $mdi_gate, $mdi_fence_electric, $mdi_battery_medium, $mdi_forklift, $mdi_motion_sensor, $mdi_account, $mdi_cast_connected, $mdi_thermometer, $mdi_water_percent, $mdi_solar_power, $mdi_flash, $mdi_chart_line, $mdi_counter, $mdi_chevron_left, $mdi_power, $mdi_plus, $mdi_minus, $mdi_autorenew, $mdi_snowflake, $mdi_fire, $mdi_weather_sunny, $mdi_weather_night, $mdi_weather_partly_cloudy, $mdi_weather_cloudy, $mdi_weather_rainy, $mdi_weather_pouring, $mdi_weather_lightning, $mdi_weather_lightning_rainy, $mdi_weather_fog, $mdi_weather_snowy, $mdi_weather_snowy_rainy, $mdi_weather_windy, $mdi_weather_windy_variant, $mdi_weather_hail]
+
+  # Chips de modo da página de detalhe do ar-condicionado
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_24
+    size: 24
+    bpp: 8
+    glyphs: [$mdi_cog, $mdi_chevron_left, $mdi_chevron_right, $mdi_power, $mdi_plus, $mdi_minus, $mdi_autorenew, $mdi_snowflake, $mdi_fire]

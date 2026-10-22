@@ -1,0 +1,432 @@
+---
+# =============================================================================
+# PONTO DE PARTIDA — Guition ESP32-4848S040 (480x480)
+#
+# Um exemplo pequeno e funcional com um de cada tipo de bloco:
+#   2 luzes (tile_switch) · 1 ar-condicionado (tile_climate) · 1 atalho de
+#   página (tile_nav) · e uma página de leitura com row_binary, row_sensor
+#   e row_text.
+#
+# COMO USAR: procure por "TROQUE" abaixo e substitua os entity_id de exemplo
+# pelos do SEU Home Assistant. Depois:  ..\painel.ps1 flash -Porta COM3
+#
+# Quando quiser algo maior, veja o painel.yaml (o escritório completo, com
+# 42 entidades e 8 páginas) e copie os pedaços que interessarem.
+# =============================================================================
+
+substitutions:
+  icon_font: mdi_icons_40
+  text_font: nunito_20
+  glyphsets: "GF_Latin_Core"
+
+  # Cores exigidas pelos pacotes base do repo (não mexa sem necessidade)
+  text_color: white
+  bg_color: black
+  button_on_color: "ep_orange"
+  button_off_color: "very_dark_gray"
+  icon_on_color: "yellow"
+  icon_off_color: "gray"
+  label_on_color: "white"
+  label_off_color: "gray"
+  button_text_color: "white"
+
+  # ── Tema (mude estas 6 cores para mudar a cara do painel inteiro) ───────────
+  tile_off_bg: "0x241E17"      # fundo do tile desligado
+  tile_off_icon: "0x8A7F74"    # ícone desligado
+  tile_off_name: "0xD8CEC3"    # nome desligado
+  tile_off_status: "0x8A7F74"  # status desligado
+  tile_on_bg: "0xF37320"       # fundo do tile LIGADO (laranja)
+  tile_on_fg: "0x3A1B08"       # texto sobre o fundo ligado
+
+  tile_icon_font: mdi_icons_40
+  tile_name_font: nunito_20
+  tile_status_font: nunito_14
+  sm_icon_font: mdi_icons_28
+  sm_name_font: nunito_14
+  row_icon_font: mdi_icons_28
+  row_name_font: nunito_20
+  row_value_font: nunito_24
+  row_status_font: nunito_18
+
+  # Backlight
+  display_daytime_brightness: "100%"
+  display_nighttime_brightness: "60%"
+  display_night_hour: "22"
+  display_night_minute: "30"
+  display_backlight_timeout_always_enabled: "true"
+  display_backlight_timeout_initial: "10"
+
+esp32:
+  cpu_frequency: 240MHz
+
+esphome:
+  name: painel                      # TROQUE se for ter mais de um painel na casa
+  friendly_name: Painel
+  on_boot:
+    - priority: 400
+      then:
+        - script.execute: update_loading_page
+
+logger:
+  level: INFO
+  baud_rate: 0    # serial desligada (economiza CPU). Comente para depurar por cabo.
+
+# Temperatura mostrada na barra de topo, ao lado do relógio
+sensor:
+  - platform: homeassistant
+    id: topbar_temp
+    entity_id: sensor.exemplo_temperatura_externa     # TROQUE
+    on_value:
+      - lambda: |-
+          if (std::isnan(x)) return;
+          lv_label_set_text(id(temp_label), str_sprintf("%.1f°", x).c_str());
+
+script:
+  - id: time_update
+    then:
+      - lambda: |-
+          auto now = id(system_time).now();
+          std::string t = now.is_valid() ? now.strftime("%H:%M") : std::string("--:--");
+          lv_label_set_text(id(time_label), t.c_str());
+          lv_label_set_text(id(time_label_top), t.c_str());
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  ap:
+    password: !secret ap_password
+
+captive_portal:
+
+packages:
+  ota_screen: !include esphome-modular-lvgl-buttons/common/ota.yaml
+  theme: !include esphome-modular-lvgl-buttons/common/theme/index.yaml
+  sensors: !include esphome-modular-lvgl-buttons/common/sensors_base.yaml
+  backlight: !include esphome-modular-lvgl-buttons/common/backlight_time.yaml
+
+  hardware: !include
+    file: esphome-modular-lvgl-buttons/hardware/guition-esp32-s3-4848s040.yaml
+    vars:
+      rotation: "0"   # neste board só "0" renderiza (180 deixa a tela preta)
+
+  loading_screen: !include esphome-modular-lvgl-buttons/pages/loading.yaml
+  info_screen: !include esphome-modular-lvgl-buttons/pages/info.yaml
+
+  # ── TILES DA TELA INICIAL ───────────────────────────────────────────────────
+  # tile_switch serve para light.* e switch.* (usa homeassistant.toggle)
+  luz1: !include
+    file: custom/tile_switch.yaml
+    vars: {uid: luz1, entity_id: "light.exemplo_sala", row: 1, column: 0, text: "Sala", icon: $mdi_ceiling_light}
+
+  luz2: !include
+    file: custom/tile_switch.yaml
+    vars: {uid: luz2, entity_id: "light.exemplo_escritorio", row: 1, column: 1, text: "Escritório", icon: $mdi_desk_lamp}
+
+  # tile_climate cria sozinho uma página de detalhe com setpoint +/- e modos
+  ar1: !include
+    file: custom/tile_climate.yaml
+    vars: {uid: ar1, entity_id: "climate.exemplo_ar", room_sensor: "sensor.exemplo_temperatura_sala", page_id: main_page, row: 2, column: 0, text: "Ar Sala", icon: $mdi_air_conditioner}
+
+  # tile_nav só abre outra página, não controla nada
+  nav_estado: !include
+    file: custom/tile_nav.yaml
+    vars: {uid: nav_estado, target_page: estado_page, row: 2, column: 1, text: "Estado", icon: $mdi_motion_sensor, subtitle: "sensores"}
+
+  # ── LINHAS DE LEITURA (página Estado) ───────────────────────────────────────
+  # row_binary: binary_sensor com dois rótulos
+  e_porta: !include
+    file: custom/row_binary.yaml
+    vars: {uid: e_porta, entity_id: "binary_sensor.exemplo_porta", page_id: estado_page, text: "Porta", icon: $mdi_door_closed, status_on: "Aberta", status_off: "Fechada", on_color: "0xE24B4A", height: 56}
+
+  # row_sensor: sensor numérico com unidade
+  e_temp: !include
+    file: custom/row_sensor.yaml
+    vars: {uid: e_temp, entity_id: "sensor.exemplo_temperatura_sala", page_id: estado_page, text: "Temperatura", icon: $mdi_thermometer, unit: "°C", decimals: 1, height: 56}
+
+  # row_text: entidade cujo estado é texto (person, media_player, alarme...)
+  e_pessoa: !include
+    file: custom/row_text.yaml
+    vars: {uid: e_pessoa, entity_id: "person.exemplo", page_id: estado_page, text: "Em casa", icon: $mdi_account, state_on: "home", status_on: "Sim", status_off: "Não", height: 56}
+
+lvgl:
+  # 12% faz o ESPHome tentar alocar o buffer na SRAM interna em vez da PSRAM,
+  # o que evita disputa de banda com a varredura do display RGB.
+  buffer_size: 12%
+
+  top_layer:
+    widgets:
+      - label:
+          id: time_label_top
+          align: TOP_RIGHT
+          x: -12
+          y: 18
+          hidden: true
+          text_font: nunito_28
+          text_color: 0xD8CEC3
+          text: "--:--"
+
+  pages:
+    # ── INÍCIO ────────────────────────────────────────────────────────────────
+    - id: main_page
+      styles: page_style
+      pad_all: 12
+      layout:
+        type: GRID
+        grid_columns: [FR(1), FR(1)]
+        grid_rows: [CONTENT, FR(1), FR(1)]
+        pad_row: 8
+        pad_column: 8
+      on_load:
+        - lvgl.widget.hide: time_label_top
+      on_unload:
+        - lvgl.widget.show: time_label_top
+      <<: !include esphome-modular-lvgl-buttons/common/swipe_navigation.yaml
+      widgets:
+        - obj:
+            grid_cell_row_pos: 0
+            grid_cell_column_pos: 0
+            grid_cell_column_span: 2
+            grid_cell_x_align: STRETCH
+            grid_cell_y_align: CENTER
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - label:
+                  id: time_label
+                  align: LEFT_MID
+                  text_font: nunito_28
+                  text_color: 0xD8CEC3
+                  text: "--:--"
+              - label:
+                  id: temp_label
+                  align: LEFT_MID
+                  x: 94
+                  y: 2
+                  text_font: nunito_18
+                  text_color: 0x8A7F74
+                  text: ""
+              - button:
+                  id: btn_settings
+                  align: RIGHT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.slider.update:
+                          id: brightness_slider
+                          value: !lambda 'return (int)(id(display_backlight).current_values.get_brightness() * 100.0f);'
+                      - lvgl.page.show:
+                          id: brightness_page
+                          animation: OVER_LEFT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_32
+                        text_color: 0x8A7F74
+                        text: $mdi_cog
+
+    # ── ESTADO (lista de leitura) ─────────────────────────────────────────────
+    - id: estado_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+        pad_row: 8
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_estado
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Estado"
+
+    # ── TELA ──────────────────────────────────────────────────────────────────
+    - id: brightness_page
+      styles: page_style
+      skip: true
+      pad_all: 12
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        flex_align_cross: CENTER
+        pad_row: 16
+      widgets:
+        - obj:
+            width: 100%
+            height: 56
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - button:
+                  id: btn_back_bright
+                  align: LEFT_MID
+                  width: 50
+                  height: 50
+                  radius: 25
+                  bg_color: 0x241E17
+                  pad_all: 0
+                  on_short_click:
+                    then:
+                      - lvgl.page.show:
+                          id: main_page
+                          animation: OUT_RIGHT
+                          time: 150ms
+                  widgets:
+                    - label:
+                        align: CENTER
+                        text_font: mdi_icons_28
+                        text_color: 0x8A7F74
+                        text: $mdi_chevron_left
+              - label:
+                  align: CENTER
+                  text_font: nunito_20
+                  text_color: 0x8A7F74
+                  text: "Tela"
+        - obj:
+            width: 100%
+            height: 44
+            bg_opa: TRANSP
+            border_width: 0
+            pad_left: 8
+            pad_right: 8
+            pad_top: 0
+            pad_bottom: 0
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - label:
+                  align: LEFT_MID
+                  text_font: nunito_20
+                  text_color: 0xD8CEC3
+                  text: "Brilho"
+              - label:
+                  id: brightness_pct_label
+                  align: RIGHT_MID
+                  text_font: nunito_36
+                  text_color: 0xD8CEC3
+                  text: "80%"
+        - slider:
+            id: brightness_slider
+            width: 90%
+            min_value: 10
+            max_value: 100
+            value: 80
+            bg_color: 0x241E17
+            indicator:
+              bg_color: 0xF37320
+            knob:
+              bg_color: 0xF37320
+            on_value:
+              then:
+                - light.turn_on:
+                    id: display_backlight
+                    brightness: !lambda 'return x / 100.0f;'
+                    transition_length: 0s
+                - lvgl.label.update:
+                    id: brightness_pct_label
+                    text: !lambda 'return str_sprintf("%d%%", (int)x);'
+        - button:
+            id: btn_screen_off
+            width: 260
+            height: 54
+            radius: 27
+            bg_color: 0x241E17
+            pad_all: 0
+            on_short_click:
+              then:
+                - light.turn_off: display_backlight
+                - lvgl.pause:
+                    show_snow: false
+            widgets:
+              - label:
+                  align: CENTER
+                  x: -86
+                  text_font: mdi_icons_24
+                  text_color: 0xE24B4A
+                  text: $mdi_power
+              - label:
+                  align: CENTER
+                  x: 14
+                  text_font: nunito_20
+                  text_color: 0xD8CEC3
+                  text: "Desligar a tela"
+
+    - id: !extend info_screen
+      skip: true
+
+# Cada ícone que você usar precisa estar listado na fonte do tamanho certo,
+# senão aparece um quadrado vazio. Os nomes válidos estão em
+# esphome-modular-lvgl-buttons/common/theme/mdi_glyph_substitutions.yaml
+font:
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_40
+    size: 40
+    bpp: 8
+    glyphs: [$mdi_ceiling_light, $mdi_desk_lamp, $mdi_air_conditioner, $mdi_motion_sensor]
+
+  - file: "esphome-modular-lvgl-buttons/assets/fonts/Nunito-SemiBold.ttf"
+    id: nunito_28
+    size: 28
+    bpp: 8
+    glyphsets: "GF_Latin_Core"
+
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_32
+    size: 32
+    bpp: 8
+    glyphs: [$mdi_cog]
+
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_28
+    size: 28
+    bpp: 8
+    glyphs: [$mdi_door_closed, $mdi_thermometer, $mdi_account, $mdi_chevron_left, $mdi_power, $mdi_plus, $mdi_minus, $mdi_autorenew, $mdi_snowflake, $mdi_fire]
+
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_24
+    size: 24
+    bpp: 8
+    glyphs: [$mdi_chevron_left, $mdi_chevron_right, $mdi_power, $mdi_plus, $mdi_minus, $mdi_autorenew, $mdi_snowflake, $mdi_fire, $mdi_cog]

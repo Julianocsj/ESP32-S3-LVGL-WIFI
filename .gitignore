@@ -1,0 +1,13 @@
+# Ambiente Python criado pelo instalar.ps1
+.venv/
+__pycache__/
+
+# Repo do agillis, clonado pelo instalar.ps1 (não versionar aqui)
+esphome/esphome-modular-lvgl-buttons/
+
+# Build do ESPHome
+esphome/.esphome/
+*.bin
+
+# Senhas do Wi-Fi — NUNCA subir
+secrets.yaml

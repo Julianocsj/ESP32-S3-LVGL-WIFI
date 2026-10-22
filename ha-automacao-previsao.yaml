@@ -1,0 +1,59 @@
+# Automação do Home Assistant que alimenta a página "Previsão" do painel.
+#
+# POR QUE ISSO EXISTE: a entidade weather.* do HA não expõe a previsão como
+# atributo — só pelo serviço weather.get_forecasts. Então o painel publica uma
+# action "set_forecast" e o HA empurra os 5 dias para lá.
+#
+# As variáveis são escalares (day1..day5) e não arrays de propósito: actions da
+# API com string[]/float[] não linkam na build ESP-IDF do ESPHome.
+#
+# COMO USAR: Configurações > Automações > menu (3 pontos) > Editar em YAML,
+# e cole este conteúdo. Ou salve em automations.yaml e recarregue.
+#
+# "painel" abaixo é o name: do seu YAML (hífens viram "_"). Para o painel.yaml
+# de exemplo, troque por painel_exemplo.
+
+alias: Painel - enviar previsão do tempo
+description: Empurra 5 dias de previsão para o painel LVGL
+triggers:
+  - trigger: time_pattern
+    minutes: "/30"
+  - trigger: homeassistant
+    event: start
+  # dispara logo que o painel conecta, para não esperar até 30 min
+  - trigger: state
+    entity_id: binary_sensor.painel_status
+    to: "on"
+conditions: []
+actions:
+  - action: weather.get_forecasts
+    target:
+      entity_id: weather.forecast_casa
+    data:
+      type: daily
+    response_variable: previsao
+  - variables:
+      f: "{{ previsao['weather.forecast_casa'].forecast }}"
+  - action: esphome.painel_set_forecast
+    data:
+      day1: "{{ as_timestamp(f[0].datetime) | timestamp_custom('%a') }}"
+      day2: "{{ as_timestamp(f[1].datetime) | timestamp_custom('%a') }}"
+      day3: "{{ as_timestamp(f[2].datetime) | timestamp_custom('%a') }}"
+      day4: "{{ as_timestamp(f[3].datetime) | timestamp_custom('%a') }}"
+      day5: "{{ as_timestamp(f[4].datetime) | timestamp_custom('%a') }}"
+      cond1: "{{ f[0].condition }}"
+      cond2: "{{ f[1].condition }}"
+      cond3: "{{ f[2].condition }}"
+      cond4: "{{ f[3].condition }}"
+      cond5: "{{ f[4].condition }}"
+      hi1: "{{ f[0].temperature | float(0) }}"
+      hi2: "{{ f[1].temperature | float(0) }}"
+      hi3: "{{ f[2].temperature | float(0) }}"
+      hi4: "{{ f[3].temperature | float(0) }}"
+      hi5: "{{ f[4].temperature | float(0) }}"
+      lo1: "{{ f[0].templow | float(0) }}"
+      lo2: "{{ f[1].templow | float(0) }}"
+      lo3: "{{ f[2].templow | float(0) }}"
+      lo4: "{{ f[3].templow | float(0) }}"
+      lo5: "{{ f[4].templow | float(0) }}"
+mode: single

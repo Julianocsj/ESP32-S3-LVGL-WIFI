@@ -1,0 +1,260 @@
+---
+# Página do robô aspirador — status + bateria na barra de topo, grade de
+# zonas (3 colunas, preenchida por chips custom/chip_zone.yaml com
+# page_id: vacuum_page), e controles: Área Social / Área Interna (seleção)
+# + iniciar / pausar / voltar à base (comandos).
+#
+# vars:
+#   vacuum_entity    vacuum.*
+#   start_script     ex.: "script.aspirar_comodos"
+#   area_social      ex.: "group.aspirador_area_social"
+#   area_interna     ex.: "group.aspirador_area_interna"
+#   page_id          página de volta (default main_page)
+
+globals:
+- id: vac_state
+  type: std::string
+  initial_value: '""'
+- id: vac_batt
+  type: float
+  initial_value: '-1.0'
+
+lvgl:
+  pages:
+  - id: vacuum_page
+    styles: page_style
+    skip: true
+    pad_all: 12
+    layout:
+      type: GRID
+      grid_columns: [FR(1), FR(1), FR(1)]
+      grid_rows: [CONTENT, FR(1), FR(1), FR(1), FR(1), CONTENT]
+      pad_row: 8
+      pad_column: 8
+    widgets:
+    # ── barra de topo (título + status/bateria) ─────────────────────────────
+    - obj:
+        grid_cell_row_pos: 0
+        grid_cell_column_pos: 0
+        grid_cell_column_span: 3
+        grid_cell_x_align: STRETCH
+        grid_cell_y_align: CENTER
+        height: 56
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        scrollable: false
+        scrollbar_mode: "OFF"
+        widgets:
+        - button:
+            id: vac_btn_back
+            align: LEFT_MID
+            width: 50
+            height: 50
+            radius: 25
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - lvgl.page.show:
+                  id: ${page_id | default("main_page")}
+                  animation: OUT_RIGHT
+                  time: 150ms
+            widgets:
+            - label:
+                align: CENTER
+                text_font: mdi_icons_28
+                text_color: $tile_off_icon
+                text: $mdi_chevron_left
+        - label:
+            align: CENTER
+            y: -11
+            text_font: $tile_name_font
+            text_color: $tile_off_name
+            text: "Aspirador"
+        - label:
+            id: vac_status_label
+            align: CENTER
+            y: 13
+            text_font: $tile_status_font
+            text_color: $tile_off_status
+            text: "..."
+    # (linhas 1-4 = chips de zona, vindos de custom/chip_zone.yaml)
+    # ── controles: áreas (seleção) + comandos ────────────────────────────────
+    - obj:
+        grid_cell_row_pos: 5
+        grid_cell_column_pos: 0
+        grid_cell_column_span: 3
+        grid_cell_x_align: STRETCH
+        grid_cell_y_align: CENTER
+        height: 64
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        scrollable: false
+        scrollbar_mode: "OFF"
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_column: 14
+        widgets:
+        - button:
+            id: vac_btn_social
+            width: 58
+            height: 58
+            radius: 16
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${area_social}
+            widgets:
+            - label:
+                id: vac_social_icon
+                align: CENTER
+                text_font: mdi_icons_24
+                text_color: $tile_off_icon
+                text: $mdi_sofa
+        - button:
+            id: vac_btn_interna
+            width: 58
+            height: 58
+            radius: 16
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - homeassistant.action:
+                  action: homeassistant.toggle
+                  data:
+                    entity_id: ${area_interna}
+            widgets:
+            - label:
+                id: vac_interna_icon
+                align: CENTER
+                text_font: mdi_icons_24
+                text_color: $tile_off_icon
+                text: $mdi_bed
+        - button:
+            id: vac_btn_start
+            width: 58
+            height: 58
+            radius: 29
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - homeassistant.action:
+                  action: ${start_script}
+                  data: {}
+            widgets:
+            - label:
+                align: CENTER
+                text_font: mdi_icons_24
+                text_color: 0x5CA848
+                text: $mdi_play
+        - button:
+            id: vac_btn_pause
+            width: 58
+            height: 58
+            radius: 29
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - homeassistant.action:
+                  action: vacuum.pause
+                  data:
+                    entity_id: ${vacuum_entity}
+            widgets:
+            - label:
+                align: CENTER
+                text_font: mdi_icons_24
+                text_color: 0xF4A900
+                text: $mdi_pause
+        - button:
+            id: vac_btn_dock
+            width: 58
+            height: 58
+            radius: 29
+            bg_color: $tile_off_bg
+            pad_all: 0
+            on_short_click:
+              then:
+              - homeassistant.action:
+                  action: vacuum.return_to_base
+                  data:
+                    entity_id: ${vacuum_entity}
+            widgets:
+            - label:
+                align: CENTER
+                text_font: mdi_icons_24
+                text_color: 0xE24B4A
+                text: $mdi_home
+
+# ── Estado vindo do HA ─────────────────────────────────────────────────────────
+text_sensor:
+- platform: homeassistant
+  id: vac_ha_state
+  entity_id: ${vacuum_entity}
+  on_value:
+  - lambda: id(vac_state) = x;
+  - script.execute: vac_update
+
+binary_sensor:
+- platform: homeassistant
+  id: vac_ha_social
+  entity_id: ${area_social}
+  trigger_on_initial_state: true
+  on_state:
+  - lambda: |-
+      lv_obj_set_style_bg_color(id(vac_btn_social),
+        lv_color_hex(x ? ${tile_on_bg} : ${tile_off_bg}), 0);
+      lv_obj_set_style_text_color(id(vac_social_icon),
+        lv_color_hex(x ? ${tile_on_fg} : ${tile_off_icon}), 0);
+
+- platform: homeassistant
+  id: vac_ha_interna
+  entity_id: ${area_interna}
+  trigger_on_initial_state: true
+  on_state:
+  - lambda: |-
+      lv_obj_set_style_bg_color(id(vac_btn_interna),
+        lv_color_hex(x ? ${tile_on_bg} : ${tile_off_bg}), 0);
+      lv_obj_set_style_text_color(id(vac_interna_icon),
+        lv_color_hex(x ? ${tile_on_fg} : ${tile_off_icon}), 0);
+
+sensor:
+- platform: homeassistant
+  id: vac_ha_batt
+  entity_id: ${vacuum_entity}
+  attribute: battery_level
+  on_value:
+  - lambda: if (!std::isnan(x)) id(vac_batt) = x;
+  - script.execute: vac_update
+
+script:
+- id: vac_update
+  then:
+  - lambda: |-
+      std::string s = id(vac_state);
+      std::string label;
+      uint32_t col = ${tile_off_status};
+      if (s == "cleaning")       { label = "Limpando"; col = ${tile_on_bg}; }
+      else if (s == "docked")    { label = "Na base"; }
+      else if (s == "returning") { label = "Voltando à base"; col = 0xF4A900; }
+      else if (s == "paused")    { label = "Pausado"; col = 0xF4A900; }
+      else if (s == "idle")      { label = "Parado"; }
+      else if (s == "error")     { label = "Erro"; col = 0xE24B4A; }
+      else if (s == "unavailable" || s == "unknown" || s.empty()) { label = "Indisponível"; }
+      else                       { label = s; }
+      if (id(vac_batt) >= 0.0f) {
+        label = str_sprintf("%s  ·  %.0f%%", label.c_str(), id(vac_batt));
+      }
+      lv_label_set_text(id(vac_status_label), label.c_str());
+      lv_obj_set_style_text_color(id(vac_status_label), lv_color_hex(col), 0);

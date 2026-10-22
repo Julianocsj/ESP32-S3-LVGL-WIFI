@@ -1,0 +1,63 @@
+---
+# Linha SOMENTE LEITURA de um binary_sensor (porta, janela, barreira, presença).
+# Para páginas em FLEX COLUMN — não usa posição de grade.
+#
+# vars:
+#   uid, entity_id, page_id, text, icon
+#   status_on   (default "Aberta")   — texto quando o sensor está em "on"
+#   status_off  (default "Fechada")
+#   on_color    (default 0xF37320)   — use 0xE24B4A para alertar de verdade
+#   height      (default 62)
+
+lvgl:
+  pages:
+  - id: !extend ${page_id}
+    widgets:
+    - obj:
+        id: row_${uid}
+        width: 100%
+        height: ${height | default(62)}
+        radius: 16
+        bg_color: $tile_off_bg
+        bg_opa: COVER
+        border_width: 0
+        pad_left: 16
+        pad_right: 16
+        pad_top: 0
+        pad_bottom: 0
+        scrollable: false
+        scrollbar_mode: "OFF"
+        widgets:
+        - label:
+            id: icon_${uid}
+            align: LEFT_MID
+            text_font: $row_icon_font
+            text_color: $tile_off_icon
+            text: ${icon}
+        - label:
+            align: LEFT_MID
+            x: 48
+            text_font: $row_name_font
+            text_color: $tile_off_name
+            text: ${text}
+        - label:
+            id: status_${uid}
+            align: RIGHT_MID
+            text_font: $row_status_font
+            text_color: $tile_off_status
+            text: ${status_off | default("Fechada")}
+
+binary_sensor:
+- platform: homeassistant
+  id: ${uid}_ha_state
+  entity_id: ${entity_id}
+  trigger_on_initial_state: true
+  on_state:
+  - lambda: |-
+      bool on = x;
+      lv_label_set_text(id(status_${uid}),
+        on ? "${status_on | default("Aberta")}" : "${status_off | default("Fechada")}");
+      lv_obj_set_style_text_color(id(status_${uid}),
+        lv_color_hex(on ? ${on_color | default("0xF37320")} : ${tile_off_status}), 0);
+      lv_obj_set_style_text_color(id(icon_${uid}),
+        lv_color_hex(on ? ${on_color | default("0xF37320")} : ${tile_off_icon}), 0);
